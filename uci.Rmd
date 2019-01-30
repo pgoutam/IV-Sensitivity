@@ -1,0 +1,13 @@
+---
+title: "IV Sensitivity - UCI Approach"
+author: "Prodyumna Goutam"
+date: "1/29/2019"
+output: html_document
+---
+
+This notebook is based on the paper "Plausibly Exogenous"(Conley et al, ReStat 2012) and the excellent Stata package **plausexog** written by Damian Clarke and Benjamin Matta.  The ReStat paper can be found [here](https://www.mitpressjournals.org/doi/10.1162/REST_a_00139) and the companion paper to the stata package can be found [here](https://www.stata-journal.com/article.html?article=st0538)
+
+The basic approach can be stated as follows: IV analysis relies on the assumption that the instrument affects the outcome only through endogenous variable. Conley et al. (2012) show approaches to conducting inference with relaxations of this requirement. In addition to its effect through the endogenous variable, they allow the instrument to directly affect the outcome variable. 
+
+
+
