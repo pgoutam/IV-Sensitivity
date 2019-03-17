@@ -48,9 +48,11 @@ library(formula.tools)
 ```
 
 
-We will write a main function which will accept as arguments the IV formula (in two parts; more details about this structure provided below), the min and max of the support ($\gamma$), and the data. 
+We will write a main function (`uci`) which will accept as arguments the IV formula (in two parts; more details about this structure provided below), the min and max of the support ($\gamma$), and the data. 
 
 The grid parameter controls the length of the (equally-spaced) grid. For example, specifying a min support of 2 and a max support of 5 with grid = 3 will create (2,3.5,5). It is possible to specify a vector for both the min and max of the support. 
+
+The function, in turn, will call a function (`create_ivformula`) to create a list of IV formulae based on the support that is specified and another (`uci_iterate`) which carries out the IV regressions and calculates the union of the confidence intervals. 
 ```{r}
 uci <- function(form,instr,gmin,gmax,grid = 2,data) {
   # Check presence of model inputs 
@@ -78,6 +80,8 @@ uci <- function(form,instr,gmin,gmax,grid = 2,data) {
 }
 ```
 
+
+Next, I will construct the `create_ivformula` function. This is called from the `uci` function and takes the IV formulae as well as the support grid. It then constructs a list of formulae to be used by `AER::ivreg`.  
 ```{r}
 create_ivformula <- function(form,instr,gamdf) {
   # Extract relevant formula components 
@@ -107,6 +111,7 @@ create_ivformula <- function(form,instr,gamdf) {
 }
 ```
 
+Finally, `uci_iterate` takes the list of IV formula, applies `ivreg`, saves the CI from each iteration, and calculates its union.
 ```{r}
 uci_iterate <- function(ivlist,data) {
     iv_res <- lapply(ivlist,ivreg,data = data)
