@@ -29,7 +29,18 @@ But what if we were to relax that and assume a violation of the exclusion restri
 
 ## Union of Confidence Intervals
 
-```{r, message = FALSE}
+### Methodology 
+
+Let's assume that we have some prior of knowledge of the support of $\gamma$. In such cases, we can rearrange the structural equation as follows: 
+\[
+Y - Z\gamma = X\beta + \varepsilon 
+\]
+Next, we can iterate over each element of the known support of $\gamma$ and estimate $\beta$ using $Z$ as an IV for $X$. To conduct inference, we can take the **union** of confidence intervals from each step fo the iteration. Conley et al. (2012) term this the Union of Confidence Intervals approach. 
+
+In this section, I demonstrate how to implement this approach. 
+
+First, some required packages. We will use the `AER` package to carry out the IV regressions and the `foreign` package to load stata datasets. In addition, the packages `Formula` and `formula.tools` will be used to deal with and manipulate formulae.   
+```{r, message=FALSE}
 library(AER)
 library(foreign)
 library(Formula)
@@ -37,6 +48,9 @@ library(formula.tools)
 ```
 
 
+We will write a main function which will accept as arguments the IV formula (in two parts; more details about this structure provided below), the min and max of the support ($\gamma$), and the data. 
+
+The grid parameter controls the length of the (equally-spaced) grid. For example, specifying a min support of 2 and a max support of 5 with grid = 3 will create (2,3.5,5). It is possible to specify a vector for both the min and max of the support. 
 ```{r}
 uci <- function(form,instr,gmin,gmax,grid = 2,data) {
   # Check presence of model inputs 
@@ -52,7 +66,7 @@ uci <- function(form,instr,gmin,gmax,grid = 2,data) {
   # Create support grid 
   gam_list <- list() 
   for (i in 1:length(gmin)){
-    gam_list[[i]] <-seq(from = gmin[1], to = gmax[i], length.out = grid)
+    gam_list[[i]] <-seq(from = gmin[i], to = gmax[i], length.out = grid)
   }
   gamdf <- expand.grid(gam_list) #All combos of gamma values
   
