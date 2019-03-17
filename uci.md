@@ -1,0 +1,136 @@
+---
+title: "Sensitivity analysis for Instrumental Variables models"
+author: "Prodyumna Goutam"
+date: "1/29/2019"
+output: 
+  html_document:
+    keep_md: true
+    toc: true
+    toc_float: true
+---
+
+## Introduction 
+
+This notebook explores sensitivity analysis for instrumental variables (IV) analysis. It is based on [this](https://www.mitpressjournals.org/doi/10.1162/REST_a_00139) paper by Conley and co-authors and the excellent stata package `plausexog` written by Damian Clarke and Benjamin Matta (with accompanying [paper](https://www.stata-journal.com/article.html?article=st0538))   
+
+The basic approach can be stated as follows: all IV models critically rely on the **exclusion restriction** i.e. the instrument only affects the outcome through the endogenous variable of interest. In conducting analysis using observational data, we often run into situations where such a strong restriction is unlikely to hold. Conley et al. (2012) show approaches to conducting inference under relaxations of this requirement. 
+
+To put things a little more formally and borrowing notation from the Conley paper, we have: 
+\[
+\begin{eqnarray}
+  X & = & Z\Pi + V\\
+  Y & = & X\beta + Z\gamma + \varepsilon\\
+\end{eqnarray}
+\]
+
+The first equation is the usual first-stage relationship between the endogenous regression $X$ and the instrument $Z$. The second equation is the usual structural relationship between the outcome $Y$ and endogenous regressor $X$, with the presence of the instrument of the instrument $Z$. The usual exclusion restriction translates to $\gamma\equiv0$. 
+
+But what if we were to relax that and assume a violation of the exclusion restriction? This translates to $\gamma\neq0$ and the term $Z\gamma$ does not drop out of the structural equation. What this means is that our instrument now has a direct effect on our outcome variable. The next section outlines one inference approach presented by Conley and co-authors to deal with this.   
+
+## Union of Confidence Intervals
+
+### Methodology 
+
+Let's assume that we have some prior of knowledge of the support of $\gamma$. In such cases, we can rearrange the structural equation as follows: 
+\[
+Y - Z\gamma = X\beta + \varepsilon 
+\]
+Next, we can iterate over each element of the known support of $\gamma$ and estimate $\beta$ using $Z$ as an IV for $X$. To conduct inference, we can take the **union** of confidence intervals from each step fo the iteration. Conley et al. (2012) term this the Union of Confidence Intervals approach. 
+
+In this section, I demonstrate how to implement this approach. 
+
+First, some required packages. We will use the `AER` package to carry out the IV regressions and the `foreign` package to load stata datasets. In addition, the packages `Formula` and `formula.tools` will be used to deal with and manipulate formulae.   
+
+```r
+library(AER)
+library(foreign)
+library(Formula)
+library(formula.tools)
+```
+
+
+We will write a main function (`uci`) which will accept as arguments the IV formula (in two parts; more details about this structure provided below), the min and max of the support ($\gamma$), and the data. 
+
+The grid parameter controls the length of the (equally-spaced) grid. For example, specifying a min support of 2 and a max support of 5 with grid = 3 will create (2,3.5,5). It is possible to specify a vector for both the min and max of the support. 
+
+The function, in turn, will call a function (`create_ivformula`) to create a list of IV formulae based on the support that is specified and another (`uci_iterate`) which carries out the IV regressions and calculates the union of the confidence intervals. 
+
+```r
+uci <- function(form,instr,gmin,gmax,grid = 2,data) {
+  # Check presence of model inputs 
+  if (missing(form)) stop("Missing formula")
+  if (missing(instr)) stop("Missing instruments")
+  if (missing(gmin)) stop("Missing min support")
+  if (missing(gmax)) stop("Missing max support")
+  if (missing(data)) stop("Data not provided")
+  
+  # Check if size of support vectors match up 
+  if (length(gmin) != length(gmax)) stop("Min and max lengths different")
+  
+  # Create support grid 
+  gam_list <- list() 
+  for (i in 1:length(gmin)){
+    gam_list[[i]] <-seq(from = gmin[i], to = gmax[i], length.out = grid)
+  }
+  gamdf <- expand.grid(gam_list) #All combos of gamma values
+  
+  #Create list of modified IV formulae
+  ivlist <- create_ivformula(form,instr,gamdf)
+  
+  # Iterate to get bounds 
+  uci_bds <- uci_iterate(ivlist,data)
+}
+```
+
+
+Next, I will construct the `create_ivformula` function. This is called from the `uci` function and takes the IV formulae as well as the support grid. It then constructs a list of formulae to be used by `AER::ivreg`.  
+
+```r
+create_ivformula <- function(form,instr,gamdf) {
+  # Extract relevant formula components 
+  iv <- formula.tools::rhs.vars(instr)
+  endo <- formula.tools::lhs.vars(instr)
+  dep <- formula.tools::lhs.vars(form)
+  exo <- formula.tools::rhs.vars(form)
+  
+  # Underidentified model? 
+  if(length(iv) < length(endo)) stop("Num iv less than num endo vars")
+  
+  # Construct RHS side of the formula 
+  rhs1 <- paste(paste(exo, collapse = "+"),paste(endo, collapse = "+"),sep = "+") 
+  rhs2 <- paste(exo <- paste(exo, collapse = "+"),paste(iv, collapse = "+"),sep = "+")
+  
+  # Create list of ivformula 
+  ivlist <- list()
+  for (i in 1:nrow(gamdf)) {
+    gam <- unlist(gamdf[i,])
+    dep_mod <- paste(gam,iv,sep = "*",collapse = "-")
+    lhs <- paste0("I(",dep,"-",dep_mod,")")
+    ivlist[[i]] <- as.Formula(paste(lhs,
+                           paste(rhs1,rhs2, sep = "|"),
+                           sep = "~"))
+  }
+  return(ivlist)
+}
+```
+
+Finally, `uci_iterate` takes the list of IV formula, applies `ivreg`, saves the CI from each iteration, and calculates its union.
+
+```r
+uci_iterate <- function(ivlist,data) {
+    iv_res <- lapply(ivlist,ivreg,data = data)
+    ci <- lapply(iv_res,confint)
+    # Construct lower and upped bound
+    ci_l <- ci[[1]][,1]
+    ci_h <- ci[[1]][,2]
+    for (i in 2:length(ci)) {
+      ci_l <- pmin(ci_l,ci[[i]][,1])
+      ci_h <- pmax(ci_h,ci[[i]][,2])
+    }
+    uci_bounds <- cbind("lb" = ci_l,"ub" = ci_h)
+    return(uci_bounds)
+}
+```
+
+
+
